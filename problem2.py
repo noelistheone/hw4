@@ -36,12 +36,27 @@ class SmallCNN(nn.Module):
 
     def __init__(self, width: int = 32, dropout_p: float = 0.0):
         super().__init__()
-        # TODO
-        raise NotImplementedError
+        self.conv1 = nn.Conv2d(3, width, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(width)
+        self.conv2 = nn.Conv2d(width, width*2, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(width*2)
+        self.conv3 = nn.Conv2d(width*2, width*4, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(width*4)
+        self.dropout = nn.Dropout(dropout_p)
+        self.fc = nn.Linear(width*4, 10)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # TODO
-        raise NotImplementedError
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1)
+        x = self.dropout(x)
+        x = self.fc(x)
+        return x
 
 
 def apply_corruption(
@@ -65,7 +80,24 @@ def apply_corruption(
     x_corr : torch.Tensor, shape (B,3,32,32), values clipped to [0,1]
     """
     # TODO
-    raise NotImplementedError
+    set_seed(seed)
+    if kind == "gaussian_noise":
+        noise = torch.randn_like(x) * severity
+        x_corr = x + noise
+    elif kind == "channel_drop":
+        drop_mask = torch.rand(x.size(0), 3, 1, 1, device=x.device) < severity
+        x_corr = x * (~drop_mask)
+    elif kind == "cutout":
+        cutout_size = int(severity * 32)
+        x_corr = x.clone()
+        for i in range(x.size(0)):
+            x_start = torch.randint(0, 32 - cutout_size, (1,))
+            y_start = torch.randint(0, 32 - cutout_size, (1,))
+            x_corr[i, :, y_start:y_start+cutout_size, x_start:x_start+cutout_size] = 0
+    else:
+        raise ValueError(f"Unknown corruption kind: {kind}")
+    
+    return torch.clamp(x_corr, 0, 1)
 
 
 def compare_mlp_cnn(
@@ -85,7 +117,21 @@ def compare_mlp_cnn(
     You must use the same seed for determinism.
     """
     # TODO
-    raise NotImplementedError
+    set_seed(seed)
+    opt_mlp = torch.optim.SGD(mlp.parameters(), lr=0.1, momentum=0.9)
+    opt_cnn = torch.optim.SGD(cnn.parameters(), lr=0.1, momentum=0.9)
+
+    for _ in range(epochs):
+        train_one_epoch(mlp, train_loader, opt_mlp, device)
+        train_one_epoch(cnn, train_loader, opt_cnn, device)
+
+    mlp_test_acc = evaluate(mlp, test_loader, device)["acc"]
+    cnn_test_acc = evaluate(cnn, test_loader, device)["acc"]
+    return {
+        "mlp_test_acc": mlp_test_acc,
+        "cnn_test_acc": cnn_test_acc,
+        "delta": cnn_test_acc - mlp_test_acc,
+    }
 
 
 if __name__ == "__main__":

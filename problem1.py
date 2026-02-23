@@ -25,8 +25,10 @@ def set_seed(seed: int) -> None:
     """
     Set seeds for random, numpy, and torch to make results deterministic.
     """
-    # TODO
-    raise NotImplementedError
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def get_cifar10_loaders(
@@ -44,8 +46,24 @@ def get_cifar10_loaders(
     - Do not shuffle test loader.
     - Use seed to make selection/shuffle deterministic.
     """
-    # TODO
-    raise NotImplementedError
+    transform = T.Compose([
+        T.ToTensor(),
+    ])
+    train_dataset = torchvision.datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
+    test_dataset = torchvision.datasets.CIFAR10(root="./data", train=False, download=True, transform=transform)
+
+    if limit_train is not None:
+        indices = list(range(limit_train))
+        train_dataset = Subset(train_dataset, indices=indices)
+
+    if limit_test is not None:
+        indices = list(range(limit_test))
+        test_dataset = Subset(test_dataset, indices=indices)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, test_loader
 
 
 class MLP(nn.Module):
@@ -63,11 +81,20 @@ class MLP(nn.Module):
     def __init__(self, hidden_sizes=(512, 256), dropout_p: float = 0.2):
         super().__init__()
         # TODO
-        raise NotImplementedError
+        layers = []
+        input_size = 3072  # CIFAR-10 images are 32x32x3 = 3072 pixels
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(input_size, hidden_size))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(dropout_p))
+            input_size = hidden_size
+        layers.append(nn.Linear(input_size, 10))  # Output layer for 10 classes
+        self.model = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # TODO
-        raise NotImplementedError
+        x = x.view(x.size(0), -1)  # Flatten input to (B, 3072)
+        return self.model(x)
 
 
 def train_one_epoch(
@@ -84,7 +111,28 @@ def train_one_epoch(
       - "acc": float
     """
     # TODO
-    raise NotImplementedError
+    model.train()
+    total_loss = 0.0
+    correct = 0
+    total = 0
+
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        optimizer.zero_grad()
+        logits = model(x)
+        loss = nn.CrossEntropyLoss()(logits, y)
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+        pred = logits.argmax(dim=1)
+        correct += (pred == y).sum().item()
+        total += y.size(0)
+
+    return {
+        "loss": total_loss / len(loader),
+        "acc": correct / total,
+    }
 
 
 @torch.no_grad()
@@ -97,7 +145,24 @@ def evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> Dict
       - "acc": float
     """
     # TODO
-    raise NotImplementedError
+    model.eval()
+    total_loss = 0.0
+    correct = 0
+    total = 0
+
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        logits = model(x)
+        loss = nn.CrossEntropyLoss()(logits, y)
+        total_loss += loss.item()
+        pred = logits.argmax(dim=1)
+        correct += (pred == y).sum().item()
+        total += y.size(0)
+
+    return {
+        "loss": total_loss / len(loader),
+        "acc": correct / total,
+    }
 
 
 if __name__ == "__main__":
